@@ -1,5 +1,94 @@
 import { deflate, inflate } from 'pako';
 
+export const DHF_CORE_API_CODE = `/**
+ * DHF Core API (dhf-core-api.js)
+ * Format Citra Privasi Eksklusif .DHF
+ * Hak Cipta © 2026 DHAFA ADRIAN MAULANA
+ * Dikembangkan oleh PT DHAFA TETAP BERUSAHA
+ *
+ * Prasyarat: Library 'pako' (zlib deflate/inflate)
+ * CDN: <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+ */
+
+// 1. Encode gambar (HTMLImageElement / Canvas) ke format biner .DHF
+async function encodeToDHF(sourceImage, options = {}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = sourceImage.naturalWidth || sourceImage.width;
+  canvas.height = sourceImage.naturalHeight || sourceImage.height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(sourceImage, 0, 0);
+
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const metadata = JSON.stringify({
+    w: canvas.width,
+    h: canvas.height,
+    name: options.name || 'foto.dhf',
+    createdAt: new Date().toISOString(),
+    creator: 'DHAFA ADRIAN MAULANA',
+    company: 'PT DHAFA TETAP BERUSAHA'
+  });
+
+  const encoder = new TextEncoder();
+  const metaBytes = encoder.encode(metadata);
+  const header = encoder.encode("DHF!"); // Magic Bytes penanda format sah
+  const metaLen = new Uint32Array([metaBytes.length]);
+  const metaLenBytes = new Uint8Array(metaLen.buffer);
+
+  const rawPayload = new Uint8Array(metaBytes.length + imgData.length);
+  rawPayload.set(metaBytes, 0);
+  rawPayload.set(imgData, metaBytes.length);
+
+  // Kompresi biner menggunakan pako.deflate (zlib level 6)
+  const compressedPayload = pako.deflate(rawPayload, { level: 6 });
+  const dhfBytes = new Uint8Array(header.length + metaLenBytes.length + compressedPayload.length);
+  dhfBytes.set(header, 0);
+  dhfBytes.set(metaLenBytes, header.length);
+  dhfBytes.set(compressedPayload, header.length + metaLenBytes.length);
+
+  return new Blob([dhfBytes], { type: 'application/octet-stream' });
+}
+
+// 2. Decode berkas .DHF (ArrayBuffer) kembali ke Canvas & Data URL
+async function decodeDHF(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  if (bytes.length < 8) {
+    throw new Error('Ukuran berkas terlalu kecil atau bukan format .DHF yang sah.');
+  }
+
+  const decoder = new TextDecoder();
+  const magic = decoder.decode(bytes.subarray(0, 4));
+  if (magic !== "DHF!") {
+    throw new Error('Magic Bytes tidak valid! Berkas bukan format .DHF asli.');
+  }
+
+  const metaLenBytes = bytes.subarray(4, 8);
+  const metaLen = new Uint32Array(metaLenBytes.buffer, metaLenBytes.byteOffset, 1)[0];
+  const compressedPayload = bytes.subarray(8);
+  const decompressed = pako.inflate(compressedPayload);
+
+  const metaString = decoder.decode(decompressed.subarray(0, metaLen));
+  const meta = JSON.parse(metaString);
+  const pixelData = decompressed.subarray(metaLen);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = meta.w;
+  canvas.height = meta.h;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(meta.w, meta.h);
+  imgData.data.set(pixelData);
+  ctx.putImageData(imgData, 0, 0);
+
+  return {
+    canvas: canvas,
+    metadata: meta,
+    dataUrl: canvas.toDataURL('image/png')
+  };
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { encodeToDHF, decodeDHF };
+}`;
+
 export interface DHFMeta {
   w: number;
   h: number;
@@ -383,7 +472,14 @@ export function generateStandaloneHtml(): string {
   <!-- Top Navigation -->
   <nav class="w-full max-w-5xl mx-auto flex justify-between items-center border-b border-gray-200 pb-4 mb-10">
     <span class="text-xl font-extrabold tracking-tight">DHF <span class="text-blue-600">Converter</span></span>
-    <span class="text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-xs">v1.3.0</span>
+    <div class="flex items-center gap-3">
+      <!-- TOMBOL MENU INTEGRASI API -->
+      <button id="btn-open-api" class="text-xs font-semibold text-gray-700 hover:text-blue-600 bg-white hover:bg-gray-50 border border-gray-200 hover:border-blue-300 px-3 py-1.5 rounded-lg transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer">
+        <svg class="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+        <span>Integrasi API</span>
+      </button>
+      <span class="text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-xs">v1.4.0</span>
+    </div>
   </nav>
 
   <!-- Hairline Loading Bar -->
@@ -462,18 +558,18 @@ export function generateStandaloneHtml(): string {
           <img id="hasil-foto" class="w-full h-auto rounded-lg max-h-40 object-contain mb-4 bg-white border border-gray-200" alt="Hasil Foto DHF">
           
           <!-- AREA BUTTON PILIHAN UNDUHAN: PNG, JPG, WEBP -->
-          <div id="download-options" class="w-full grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div id="download-options" class="w-full grid grid-cols-3 gap-2">
             <button id="btn-dl-png" class="bg-gray-900 hover:bg-black text-white text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              <span>Unduh sebagai PNG</span>
+              <span>Unduh PNG</span>
             </button>
             <button id="btn-dl-jpg" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              <span>Unduh sebagai JPG</span>
+              <span>Unduh JPG</span>
             </button>
             <button id="btn-dl-webp" class="bg-white hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              <span>Unduh sebagai WEBP</span>
+              <span>Unduh WEBP</span>
             </button>
           </div>
         </div>
@@ -487,6 +583,63 @@ export function generateStandaloneHtml(): string {
     <div class="max-w-xl">&copy; 2026 dhf adalah format privasi yang dikembangkan oleh DHAFA ADRIAN MAULANA dengan tujuan menjaga privasi foto anda. Hak cipta dilindungi oleh undang - undang</div>
     <div class="font-bold text-gray-500 whitespace-nowrap">Dikembangkan oleh PT DHAFA TETAP BERUSAHA</div>
   </footer>
+
+  <!-- MODAL POP-UP INTEGRASI API DENGAN EFEK GLASSMORPHISM -->
+  <div id="api-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] flex flex-col space-y-4">
+      <div class="flex items-start justify-between pb-3 border-b border-gray-100">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-gray-900 leading-snug">
+              Dokumentasi Resmi: <span class="font-mono text-blue-600">dhf-core-api.js</span>
+            </h3>
+            <p class="text-xs text-gray-500">
+              Pustaka integrasi JavaScript format citra privasi .DHF untuk pengembang web & sistem pihak ketiga.
+            </p>
+          </div>
+        </div>
+        <button id="btn-close-api-x" class="text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-lg transition-colors cursor-pointer">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="bg-blue-50/60 border border-blue-100 rounded-xl p-3 text-xs text-blue-900 space-y-1">
+        <div class="font-semibold flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          <span>Petunjuk Integrasi Pengembang</span>
+        </div>
+        <p class="text-[11px] text-blue-700 leading-relaxed">
+          Pustaka ini memerlukan pustaka <strong>pako</strong> (zlib deflate/inflate). Sisipkan script CDN pako sebelum memanggil fungsi <code class="font-mono bg-blue-100/70 px-1 py-0.5 rounded">encodeToDHF()</code> atau <code class="font-mono bg-blue-100/70 px-1 py-0.5 rounded">decodeDHF()</code>.
+        </p>
+      </div>
+
+      <div class="relative flex-1 min-h-0 bg-[#0f172a] rounded-xl border border-gray-800 overflow-hidden flex flex-col shadow-inner">
+        <div class="flex items-center justify-between px-3.5 py-2 bg-slate-900 border-b border-slate-800">
+          <div class="flex items-center gap-2">
+            <div class="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
+            <div class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
+            <span class="text-[11px] font-mono text-gray-400 ml-1">dhf-core-api.js</span>
+          </div>
+          <button id="btn-copy-api-code" class="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold py-1 px-3 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer">
+            <svg id="icon-copy-api" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            <span id="text-copy-api">Salin Kode</span>
+          </button>
+        </div>
+        <pre class="p-4 text-[11px] font-mono text-slate-200 overflow-y-auto max-h-[280px] leading-relaxed selection:bg-blue-500 selection:text-white"><code id="code-snippet-api"></code></pre>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-gray-100 text-xs">
+        <span class="text-[11px] text-gray-400">Hak Cipta &copy; 2026 DHAFA ADRIAN MAULANA · PT DHAFA TETAP BERUSAHA</span>
+        <button id="btn-close-api-bottom" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors cursor-pointer">
+          Selesai
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL ERROR POP-UP: MAGIC BYTES MISMATCH / MANUAL RENAME DETECTED -->
   <div id="error-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
@@ -563,6 +716,42 @@ export function generateStandaloneHtml(): string {
       document.getElementById('error-modal').classList.add('hidden');
       if (pendingFileToEncode) {
         processEncoderFile(pendingFileToEncode);
+      }
+    });
+
+    // Dokumentasi API Core
+    const DHF_API_SOURCE = ${JSON.stringify(DHF_CORE_API_CODE)};
+
+    const codeSnippetEl = document.getElementById('code-snippet-api');
+    if (codeSnippetEl) codeSnippetEl.textContent = DHF_API_SOURCE;
+
+    // Modal API Interaksi
+    const apiModal = document.getElementById('api-modal');
+    document.getElementById('btn-open-api')?.addEventListener('click', () => {
+      apiModal?.classList.remove('hidden');
+    });
+    document.getElementById('btn-close-api-x')?.addEventListener('click', () => {
+      apiModal?.classList.add('hidden');
+    });
+    document.getElementById('btn-close-api-bottom')?.addEventListener('click', () => {
+      apiModal?.classList.add('hidden');
+    });
+
+    // Salin Kode API
+    document.getElementById('btn-copy-api-code')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(DHF_API_SOURCE);
+        const textEl = document.getElementById('text-copy-api');
+        const iconEl = document.getElementById('icon-copy-api');
+        if (textEl) textEl.textContent = 'Tersalin!';
+        if (iconEl) iconEl.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+        showToast('Kode pustaka dhf-core-api.js berhasil disalin ke papan klip!', 'success');
+        setTimeout(() => {
+          if (textEl) textEl.textContent = 'Salin Kode';
+          if (iconEl) iconEl.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />';
+        }, 2500);
+      } catch (e) {
+        showToast('Gagal menyalin kode ke papan klip.', 'error');
       }
     });
 
@@ -689,14 +878,14 @@ export function generateStandaloneHtml(): string {
           if (detectedType !== 'UNKNOWN') {
             showErrorModal(
               'Format Tidak Valid: Ganti Nama Manual Terdeteksi',
-              'Sistem mendeteksi bahwa berkas "' + (rawFile ? rawFile.name : 'ini') + '" sebenarnya merupakan format ' + detectedType + ' asli yang diubah namanya menjadi .dhf. Format .DHF memerlukan kompresi biner khusus.',
+              'Sistem mendeteksi bahwa berkas "' + (rawFile ? rawFile.name : 'ini') + '" sebenarnya merupakan format ' + detectedType + ' asli yang diubah namanya secara manual menjadi .dhf. Format .DHF memerlukan struktur enkapsulasi biner resmi dengan penanda "DHF!". Silakan gunakan kotak Encoder di atas terlebih dahulu untuk mendapatkan struktur file .DHF yang sah.',
               hexPreview + ' (' + detectedType + ')',
               rawFile
             );
           } else {
             showErrorModal(
               'Kegagalan Magic Bytes: Bukan Format .DHF',
-              'Header biner berkas tidak memuat penanda wajib "DHF!". Berkas ini mungkin rusak atau bukan dihasilkan oleh DHF Converter.',
+              'Header biner berkas tidak memuat penanda wajib "DHF!". Berkas ini bukan berkas .DHF yang valid. Silakan gunakan kotak Encoder terlebih dahulu untuk mengubah foto Anda ke format .DHF yang sah.',
               hexPreview,
               rawFile
             );
@@ -743,7 +932,7 @@ export function generateStandaloneHtml(): string {
       if (!decodedCanvas) return;
       const mime = format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
       const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
-      const quality = format === 'png' ? undefined : 0.92;
+      const quality = format === 'png' ? undefined : 0.95;
       const dataUrl = decodedCanvas.toDataURL(mime, quality);
       const a = document.createElement('a');
       a.href = dataUrl;

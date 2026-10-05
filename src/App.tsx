@@ -7,7 +7,10 @@ import {
   CheckCircle2,
   X,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Code2,
+  Copy,
+  Check
 } from 'lucide-react';
 import {
   decodeDHF,
@@ -15,6 +18,7 @@ import {
   createDemoDHF,
   generateStandaloneHtml,
   MagicBytesError,
+  DHF_CORE_API_CODE,
   type DecodeResult,
   type EncodeResult
 } from './dhfEngine';
@@ -44,6 +48,10 @@ function formatBytes(bytes: number): string {
 export default function App() {
   // Loading
   const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // API Integration Modal
+  const [isApiModalOpen, setIsApiModalOpen] = useState<boolean>(false);
+  const [isCopied, setIsCopied] = useState<boolean>(false);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -150,7 +158,7 @@ export default function App() {
           if (err.detectedType && err.detectedType !== 'UNKNOWN') {
             setErrorModal({
               title: 'Format Tidak Valid: Ganti Nama Manual Terdeteksi',
-              message: `Sistem mendeteksi bahwa berkas "${rawFile ? rawFile.name : sourceLabel}" sebenarnya merupakan gambar ${err.detectedType} asli yang diubah namanya (rename) menjadi .dhf. Format .DHF memerlukan kompresi biner khusus dengan signature "DHF!".`,
+              message: `Sistem mendeteksi bahwa berkas "${rawFile ? rawFile.name : sourceLabel}" sebenarnya merupakan gambar ${err.detectedType} asli yang diubah namanya (rename) secara manual menjadi .dhf. Format .DHF memerlukan struktur enkapsulasi biner resmi dengan penanda "DHF!". Silakan gunakan kotak Encoder di atas terlebih dahulu untuk mendapatkan struktur file .DHF yang sah.`,
               magicFound: `${hexPreview} (${err.detectedType})`,
               detectedType: err.detectedType,
               rawFile: rawFile,
@@ -158,7 +166,7 @@ export default function App() {
           } else {
             setErrorModal({
               title: 'Kegagalan Magic Bytes: Bukan Format .DHF',
-              message: `Header biner berkas tidak memuat penanda wajib "DHF!". Berkas ini mungkin rusak atau bukan dihasilkan oleh DHF Converter.`,
+              message: `Header biner berkas tidak memuat penanda wajib "DHF!". Berkas ini bukan berkas .DHF yang valid. Silakan gunakan kotak Encoder terlebih dahulu untuk mengubah foto Anda ke format .DHF yang sah.`,
               magicFound: hexPreview,
               detectedType: 'UNKNOWN',
               rawFile: rawFile,
@@ -249,12 +257,24 @@ export default function App() {
     }
   }, [handleDecodeBuffer]);
 
+  // Copy API Code
+  const handleCopyApiCode = async () => {
+    try {
+      await navigator.clipboard.writeText(DHF_CORE_API_CODE);
+      setIsCopied(true);
+      addToast('Kode pustaka dhf-core-api.js berhasil disalin ke papan klip!', 'success');
+      setTimeout(() => setIsCopied(false), 2500);
+    } catch {
+      addToast('Gagal menyalin kode ke papan klip.', 'error');
+    }
+  };
+
   // Download Decoded Preview as PNG, JPG, or WEBP
   const handleDownloadDecodedImage = (format: 'png' | 'jpg' | 'webp') => {
     if (!decoderResult) return;
     const mimeType = format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
     const ext = format === 'jpg' ? 'jpg' : format === 'webp' ? 'webp' : 'png';
-    const quality = format === 'png' ? undefined : 0.92;
+    const quality = format === 'png' ? undefined : 0.95;
     const dataUrl = decoderResult.canvas.toDataURL(mimeType, quality);
     const a = document.createElement('a');
     a.href = dataUrl;
@@ -279,7 +299,17 @@ export default function App() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          {/* TOMBOL MENU INTEGRASI API */}
+          <button
+            onClick={() => setIsApiModalOpen(true)}
+            className="text-xs font-semibold text-gray-700 hover:text-blue-600 bg-white hover:bg-gray-50 border border-gray-200 hover:border-blue-300 px-3 py-1.5 rounded-lg transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            title="Buka Dokumentasi Integrasi API DHF"
+          >
+            <Code2 className="w-3.5 h-3.5 text-blue-600" />
+            <span>Integrasi API</span>
+          </button>
+
           <button
             onClick={handleLoadSample}
             className="text-xs font-semibold text-gray-600 hover:text-blue-600 bg-white border border-gray-200 hover:border-blue-300 px-3 py-1.5 rounded-lg transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
@@ -289,7 +319,7 @@ export default function App() {
             <span>Coba Sampel</span>
           </button>
           <span className="text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-xs">
-            v1.3.0
+            v1.4.0
           </span>
         </div>
       </nav>
@@ -441,27 +471,27 @@ export default function App() {
                 />
 
                 {/* AREA BUTTON PILIHAN UNDUHAN: PNG, JPG, WEBP */}
-                <div id="download-options" className="w-full grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
+                <div id="download-options" className="w-full grid grid-cols-3 gap-2 pt-2">
                   <button
                     onClick={() => handleDownloadDecodedImage('png')}
                     className="bg-gray-900 hover:bg-black text-white text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Unduh sebagai PNG</span>
+                    <span>Unduh PNG</span>
                   </button>
                   <button
                     onClick={() => handleDownloadDecodedImage('jpg')}
                     className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Unduh sebagai JPG</span>
+                    <span>Unduh JPG</span>
                   </button>
                   <button
                     onClick={() => handleDownloadDecodedImage('webp')}
                     className="bg-white hover:bg-gray-100 border border-gray-200 text-gray-800 text-xs font-semibold py-2 px-2.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Unduh sebagai WEBP</span>
+                    <span>Unduh WEBP</span>
                   </button>
                 </div>
               </div>
@@ -480,6 +510,95 @@ export default function App() {
           Dikembangkan oleh PT DHAFA TETAP BERUSAHA
         </div>
       </footer>
+
+      {/* JENDELA POP-UP (MODAL BOX) INTEGRASI API DENGAN EFEK GLASSMORPHISM */}
+      {isApiModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white/95 backdrop-blur-xl border border-white/60 shadow-2xl rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] flex flex-col space-y-4">
+            
+            {/* Header Modal */}
+            <div className="flex items-start justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+                  <Code2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 leading-snug">
+                    Dokumentasi Resmi: <span className="font-mono text-blue-600">dhf-core-api.js</span>
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Pustaka integrasi JavaScript untuk pemrosesan format citra privasi .DHF di aplikasi pihak ketiga.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsApiModalOpen(false)}
+                className="text-gray-400 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 p-1.5 rounded-lg transition-colors cursor-pointer"
+                title="Tutup Modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Guide & Prerequisites */}
+            <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-3 text-xs text-blue-900 space-y-1">
+              <div className="font-semibold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <span>Petunjuk Integrasi Pengembang</span>
+              </div>
+              <p className="text-[11px] text-blue-700 leading-relaxed">
+                Pustaka ini memerlukan dependensi <strong>pako</strong> (zlib compression). Sisipkan script pako via CDN sebelum memanggil fungsi <code className="font-mono bg-blue-100/70 px-1 py-0.5 rounded">encodeToDHF()</code> atau <code className="font-mono bg-blue-100/70 px-1 py-0.5 rounded">decodeDHF()</code>.
+              </p>
+            </div>
+
+            {/* Code Box with Copy Button */}
+            <div className="relative flex-1 min-h-0 bg-[#0f172a] rounded-xl border border-gray-800 overflow-hidden flex flex-col shadow-inner">
+              <div className="flex items-center justify-between px-3.5 py-2 bg-slate-900 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
+                  <span className="text-[11px] font-mono text-gray-400 ml-1">dhf-core-api.js</span>
+                </div>
+                <button
+                  onClick={handleCopyApiCode}
+                  className="bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold py-1 px-3 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                >
+                  {isCopied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Tersalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Salin Kode</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <pre className="p-4 text-[11px] font-mono text-slate-200 overflow-y-auto max-h-[300px] leading-relaxed selection:bg-blue-500 selection:text-white">
+                <code>{DHF_CORE_API_CODE}</code>
+              </pre>
+            </div>
+
+            {/* Footer Modal Action */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-xs">
+              <span className="text-[11px] text-gray-400">
+                Lisensi Privasi & Hak Cipta dilindungi undang - undang.
+              </span>
+              <button
+                onClick={() => setIsApiModalOpen(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Selesai
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* AESTHETIC ERROR POP-UP MODAL: MAGIC BYTES MISMATCH / MANUAL RENAME DETECTED */}
       {errorModal && (
