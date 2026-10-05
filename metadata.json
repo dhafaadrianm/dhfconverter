@@ -1,0 +1,8 @@
+{
+  "name": "DHF Image Engine",
+  "description": "Aplikasi web modern pemrosesan format citra .DHF dengan encoder kompresi zlib, decoder instan, drag-and-drop, dan preview via URL parameter.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
